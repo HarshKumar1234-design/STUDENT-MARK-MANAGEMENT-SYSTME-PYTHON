@@ -1,142 +1,417 @@
-students = {}
+import sys
+import math
+import matplotlib.pyplot as plt
 
-def add_student():
-    """Add a new student with marks"""
-    name = input("Enter student name: ")
-    roll_no = input("Enter roll number: ")
-    
-    marks = {}
-    marks['Math'] = float(input("Enter Math marks: "))
-    marks['Science'] = float(input("Enter Science marks: "))
-    marks['English'] = float(input("Enter English marks: "))
-    
-    # Calculate total and average
-    total = sum(marks.values())
-    average = total / len(marks)
-    
-    students[roll_no] = {
-        'name': name,
-        'marks': marks,
-        'total': total,
-        'average': average,
-        'grade': calculate_grade(average)
-    }
-    
-    print(f"Student {name} added successfully!")
+# Time order and maxima for normalization to percentage
+time_order = ['Internal1', 'CAT1', 'Internal2', 'CAT2', 'Internal3', 'FAT']
+MAX_SCORES = {'Internal1': 10, 'CAT1': 50, 'Internal2': 10, 'CAT2': 50, 'Internal3': 10, 'FAT': 80}
 
-def calculate_grade(average):
-    """Calculate grade based on average"""
-    if average >= 90:
-        return 'A+'
-    elif average >= 80:
+# Predefined subjects (edit as needed)
+subjects_data = {
+    'Multivariable Calculus and Differential Equations': {},
+    'Applied Chemistry': {},
+    'Computation Structures': {},
+    'Basic Engineering': {},
+    'Problem Solving using Python': {},
+}
+
+# ----------------- Grading and calculations -----------------
+
+def assign_grade(percentage):
+    if percentage >= 90:
+        return 'S'
+    elif percentage >= 80:
         return 'A'
-    elif average >= 70:
+    elif percentage >= 70:
         return 'B'
-    elif average >= 60:
+    elif percentage >= 60:
         return 'C'
-    elif average >= 50:
+    elif percentage >= 50:
         return 'D'
+    elif percentage >= 40:
+        return 'E'
     else:
         return 'F'
 
-def view_student():
-    """View details of a specific student"""
-    roll_no = input("Enter roll number: ")
-    
-    if roll_no in students:
-        student = students[roll_no]
-        print("\n" + "="*50)
-        print(f"Name: {student['name']}")
-        print(f"Roll Number: {roll_no}")
-        print("Marks:")
-        for subject, mark in student['marks'].items():
-            print(f"  {subject}: {mark}")
-        print(f"Total: {student['total']}")
-        print(f"Average: {student['average']:.2f}")
-        print(f"Grade: {student['grade']}")
-        print("="*50 + "\n")
-    else:
-        print("Student not found!")
+def calculate_subject_score(marks):
+    # FAT fail rule: subject grade F if FAT < 50%
+    fat_percentage = (marks['FAT'] / MAX_SCORES['FAT']) * 100
+    if fat_percentage < 50:
+        return 'F', 0.0
+    total_percentage = (
+        ((marks['CAT1'] / 50) * 15) +
+        ((marks['CAT2'] / 50) * 15) +
+        ((marks['FAT']  / 80) * 40) +
+        ((marks['Internal1'] / 10) * 10) +
+        ((marks['Internal2'] / 10) * 10) +
+        ((marks['Internal3'] / 10) * 10)
+    )
+    grade = assign_grade(total_percentage)
+    return grade, float(total_percentage)
 
-def view_all_students():
-    """Display all students"""
-    if not students:
-        print("No students in the system!")
-        return
-    
-    print("\n" + "="*70)
-    print(f"{'Roll No':<10} {'Name':<20} {'Total':<10} {'Average':<10} {'Grade':<10}")
-    print("="*70)
-    for roll_no, student in students.items():
-        print(f"{roll_no:<10} {student['name']:<20} {student['total']:<10} "
-              f"{student['average']:<10.2f} {student['grade']:<10}")
-    print("="*70 + "\n")
+# ----------------- Input helpers -----------------
 
-def update_student():
-    """Update student marks"""
-    roll_no = input("Enter roll number: ")
-    
-    if roll_no not in students:
-        print("Student not found!")
-        return
-    
-    print(f"Updating marks for {students[roll_no]['name']}")
+def get_marks_input():
+    print("Enter marks in the following order:", ' - '.join(time_order))
     marks = {}
-    marks['Math'] = float(input("Enter new Math marks: "))
-    marks['Science'] = float(input("Enter new Science marks: "))
-    marks['English'] = float(input("Enter new English marks: "))
-    
-    total = sum(marks.values())
-    average = total / len(marks)
-    
-    students[roll_no]['marks'] = marks
-    students[roll_no]['total'] = total
-    students[roll_no]['average'] = average
-    students[roll_no]['grade'] = calculate_grade(average)
-    
-    print("Marks updated successfully!")
+    for exam_part in time_order:
+        max_score = MAX_SCORES[exam_part]
+        while True:
+            try:
+                score = float(input(f"{exam_part} (out of {max_score}): "))
+                if 0 <= score <= max_score:
+                    marks[exam_part] = score
+                    break
+                else:
+                    print(f"Invalid input. Score should be between 0 and {max_score}.")
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
+    return marks
 
-def delete_student():
-    """Delete a student record"""
-    roll_no = input("Enter roll number: ")
-    
-    if roll_no in students:
-        del students[roll_no]
-        print("Student deleted successfully!")
-    else:
+# ----------------- Formatting utilities -----------------
+
+def _num_len(val, decimals=2):
+    s = f"{val:.{decimals}f}"
+    return len(s)
+
+def _max_len_str(values, header, min_w=0):
+    return max(min_w, len(header), *(len(v) for v in values)) if values else max(min_w, len(header))
+
+def _max_len_num(values, header, decimals=2, min_w=0):
+    return max(min_w, len(header), *(_num_len(v, decimals) for v in values)) if values else max(min_w, len(header))
+
+# ----------------- View: All students -----------------
+
+def print_students_table(students):
+    # Build data rows first
+    rows = []
+    for roll, info in students.items():
+        total_all = 0.0
+        total_percent_sum = 0.0
+        for _, marks in info['subjects'].items():
+            _, percent = calculate_subject_score(marks)
+            total_all += sum(marks.values())
+            total_percent_sum += percent
+        avg_percent = total_percent_sum / max(1, len(info['subjects']))
+        rows.append((roll, info['name'], total_all, avg_percent, assign_grade(avg_percent)))
+
+    # Sort by avg percentage desc
+    rows.sort(key=lambda x: x[3], reverse=True)
+
+    # Compute dynamic widths
+    roll_w = _max_len_str([r[0] for r in rows], "Roll Number", 10)
+    name_w = _max_len_str([r[1] for r in rows], "Name", 28)
+    tot_w  = _max_len_num([r[2] for r in rows], "Total Marks", 2, 12)
+    avg_w  = _max_len_num([r[3] for r in rows], "Avg %", 2, 7)
+    grade_w = _max_len_str([r[4] for r in rows], "Grade", 5)
+
+    header_fmt = f"{{:<{roll_w}}}  {{:<{name_w}}}  {{:>{tot_w}}}  {{:>{avg_w}}}  {{:>{grade_w}}}"
+    row_fmt    = f"{{:<{roll_w}}}  {{:<{name_w}}}  {{:>{tot_w}.2f}}  {{:>{avg_w}.2f}}  {{:>{grade_w}}}"
+
+    total_width = roll_w + name_w + tot_w + avg_w + grade_w + 8
+    print()
+    print(header_fmt.format("Roll Number", "Name", "Total Marks", "Avg %", "Grade"))
+    print("-" * total_width)
+    for roll, name, total_all, avg_percent, grade in rows:
+        print(row_fmt.format(roll, name, total_all, avg_percent, grade))
+    print()
+
+# ----------------- View: Individual student -----------------
+
+def view_individual_student(students):
+    roll = input("Enter the student's Roll Number: ").strip()
+    if roll not in students:
         print("Student not found!")
+        return
+    info = students[roll]
+    subjects = list(info['subjects'].keys())
+
+    # Collect row data
+    row_data = []
+    subj_percents = []
+    for subject, marks in info['subjects'].items():
+        cat1_per = (marks['CAT1'] / 50) * 100
+        cat2_per = (marks['CAT2'] / 50) * 100
+        fat_per  = (marks['FAT']  / 80) * 100
+        internal_total = marks['Internal1'] + marks['Internal2'] + marks['Internal3']
+
+        cat1_grade = assign_grade(cat1_per)
+        cat2_grade = assign_grade(cat2_per)
+        fat_grade  = assign_grade(fat_per) if fat_per >= 50 else 'F'
+        total_grade, subj_percent = calculate_subject_score(marks)
+
+        row_data.append({
+            "subject": subject,
+            "cat1": marks['CAT1'], "gr1": cat1_grade,
+            "cat2": marks['CAT2'], "gr2": cat2_grade,
+            "fat": marks['FAT'],   "fatgr": fat_grade,
+            "internal": internal_total, "total_grade": total_grade,
+            "totpct": subj_percent
+        })
+        subj_percents.append(subj_percent)
+
+    # Dynamic widths
+    subj_w = _max_len_str([r["subject"] for r in row_data], "Subject", 30)
+    n_w    = _max_len_num([r["cat1"] for r in row_data] + [r["cat2"] for r in row_data], "CAT1", 2, 6)
+    n2_w   = _max_len_num([r["fat"] for r in row_data], "FAT", 2, 7)
+    int_w  = _max_len_num([r["internal"] for r in row_data], "Internal", 2, 8)
+    gr_w   = _max_len_str([r["gr1"] for r in row_data] + [r["gr2"] for r in row_data] + [r["fatgr"] for r in row_data], "Gr", 3)
+    totpct_w = _max_len_num([r["totpct"] for r in row_data], "Tot%", 2, 6)
+    tgrade_w = _max_len_str([r["total_grade"] for r in row_data], "Grade", 5)
+
+    header_fmt = (
+        f"{{:<{subj_w}}}  "
+        f"{{:>{n_w}}} {{:>{gr_w}}}  "
+        f"{{:>{n_w}}} {{:>{gr_w}}}  "
+        f"{{:>{n2_w}}} {{:>{gr_w}}}  "
+        f"{{:>{int_w}}} {{:>{tgrade_w}}}  "
+        f"{{:>{totpct_w}}}"
+    )
+    row_fmt = (
+        f"{{:<{subj_w}}}  "
+        f"{{:>{n_w}.2f}} {{:>{gr_w}}}  "
+        f"{{:>{n_w}.2f}} {{:>{gr_w}}}  "
+        f"{{:>{n2_w}.2f}} {{:>{gr_w}}}  "
+        f"{{:>{int_w}.2f}} {{:>{tgrade_w}}}  "
+        f"{{:>{totpct_w}.2f}}"
+    )
+
+    total_width = subj_w + (n_w+gr_w)*2 + (n2_w+gr_w) + (int_w+tgrade_w) + totpct_w + 10
+    print(f"\nDetails for {info['name']} (Roll: {roll}):\n")
+    print(header_fmt.format("Subject", "CAT1", "Gr1", "CAT2", "Gr2", "FAT", "FATGr", "Internal", "Grade", "Tot%"))
+    print("-" * total_width)
+
+    for r in row_data:
+        print(row_fmt.format(
+            r["subject"],
+            r["cat1"], r["gr1"],
+            r["cat2"], r["gr2"],
+            r["fat"],  r["fatgr"],
+            r["internal"], r["total_grade"],
+            r["totpct"]
+        ))
+
+    overall_avg = (sum(subj_percents) / max(1, len(subj_percents)))
+    overall_grade = assign_grade(overall_avg)
+    print(f"\nOverall Percentage (All Subjects): {overall_avg:.2f}%")
+    print(f"Overall Grade: {overall_grade}")
+
+    # Plots
+    plot_performance_graphs(info)
+
+# ----------------- Plots -----------------
+
+def plot_performance_graphs(student_info):
+    subjects = list(student_info['subjects'].keys())
+
+    # Individual subjects (normalized to percentage)
+    plt.figure()
+    for subject in subjects:
+        marks = student_info['subjects'][subject]
+        vals_pct = [(marks[exam] / MAX_SCORES[exam]) * 100 for exam in time_order]
+        plt.plot(time_order, vals_pct, marker='o', label=subject)
+    plt.title('Individual Subject Performance Over Time (Percentage)')
+    plt.xlabel('Exam')
+    plt.ylabel('Percentage')
+    plt.ylim(0, 100)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Overall performance timeline (average percentage across subjects)
+    overall_pct_series = []
+    for exam_part in time_order:
+        total_pct = 0.0
+        count = 0
+        for subject in subjects:
+            marks = student_info['subjects'][subject]
+            total_pct += (marks[exam_part] / MAX_SCORES[exam_part]) * 100
+            count += 1
+        overall_pct_series.append((total_pct / count) if count else 0.0)
+
+    plt.figure()
+    plt.plot(time_order, overall_pct_series, marker='o', color='black')
+    plt.title('Overall Performance Over Semester (Percentage)')
+    plt.xlabel('Exam')
+    plt.ylabel('Average Percentage')
+    plt.ylim(0, 100)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+# ----------------- Class performance -----------------
+
+def class_performance(students):
+    if not students:
+        print("No student records to calculate class performance.")
+        return
+
+    num_students = len(students)
+    subjects = list(subjects_data.keys())
+
+    # Sums per subject per exam
+    subj_exam_sums = {subj: {exam: 0.0 for exam in time_order} for subj in subjects}
+    for stu in students.values():
+        for subj in subjects:
+            marks = stu['subjects'][subj]
+            for exam in time_order:
+                subj_exam_sums[subj][exam] += marks[exam]
+
+    # Averages
+    subj_exam_avgs = {
+        subj: {exam: subj_exam_sums[subj][exam] / num_students for exam in time_order}
+        for subj in subjects
+    }
+
+    cat1_avgs = {subj: subj_exam_avgs[subj]['CAT1'] for subj in subjects}
+    cat2_avgs = {subj: subj_exam_avgs[subj]['CAT2'] for subj in subjects}
+    fat_avgs  = {subj: subj_exam_avgs[subj]['FAT']  for subj in subjects}
+    internal_totals_avgs = {
+        subj: subj_exam_avgs[subj]['Internal1'] + subj_exam_avgs[subj]['Internal2'] + subj_exam_avgs[subj]['Internal3']
+        for subj in subjects
+    }
+
+    # Overall subject averages (percentage with weights)
+    overall_subj_avgs = {}
+    for subj in subjects:
+        overall_subj_avgs[subj] = (
+            ((subj_exam_avgs[subj]['CAT1'] / 50) * 15) +
+            ((subj_exam_avgs[subj]['CAT2'] / 50) * 15) +
+            ((subj_exam_avgs[subj]['FAT']  / 80) * 40) +
+            (((subj_exam_avgs[subj]['Internal1'] + subj_exam_avgs[subj]['Internal2'] + subj_exam_avgs[subj]['Internal3']) / 30) * 30)
+        )
+
+    overall_semester_avg = sum(overall_subj_avgs.values()) / max(1, len(subjects))
+
+    # Dynamic widths for table 1
+    subj_w = _max_len_str(subjects, "Subject", 30)
+    n_w    = _max_len_num(list(cat1_avgs.values()) + list(cat2_avgs.values()), "CAT Avg", 2, 10)
+    fat_w  = _max_len_num(list(fat_avgs.values()), "FAT Avg", 2, 10)
+    int_w  = _max_len_num(list(internal_totals_avgs.values()), "Cumulative Internals Avg", 2, 24)
+
+    header_fmt = f"{{:<{subj_w}}}  {{:>{n_w}}}  {{:>{n_w}}}  {{:>{fat_w}}}  {{:>{int_w}}}"
+    row_fmt    = f"{{:<{subj_w}}}  {{:>{n_w}.2f}}  {{:>{n_w}.2f}}  {{:>{fat_w}.2f}}  {{:>{int_w}.2f}}"
+    total_width = subj_w + n_w*2 + fat_w + int_w + 8
+
+    print("\nClass Performance:")
+    print(header_fmt.format("Subject", "CAT1 Avg", "CAT2 Avg", "FAT Avg", "Cumulative Internals Avg"))
+    print("-" * total_width)
+    for subj in subjects:
+        print(row_fmt.format(subj, cat1_avgs[subj], cat2_avgs[subj], fat_avgs[subj], internal_totals_avgs[subj]))
+
+    # Dynamic widths for table 2
+    pct_w = _max_len_num(list(overall_subj_avgs.values()), "Avg %", 2, 8)
+    header2_fmt = f"{{:<{subj_w}}}  {{:>{pct_w}}}"
+    row2_fmt    = f"{{:<{subj_w}}}  {{:>{pct_w}.2f}}"
+
+    print("\nOverall Average per Subject (in %):")
+    print(header2_fmt.format("Subject", "Avg %"))
+    print("-" * (subj_w + pct_w + 2))
+    for subj in subjects:
+        print(row2_fmt.format(subj, overall_subj_avgs[subj]))
+
+    print(f"\nOverall Semester Average: {overall_semester_avg:.2f}%")
+
+    # Plots: class averages per subject over time (normalized to percentage)
+    plt.figure()
+    for subj in subjects:
+        vals_pct = [(subj_exam_avgs[subj][exam] / MAX_SCORES[exam]) * 100 for exam in time_order]
+        plt.plot(time_order, vals_pct, marker='o', label=subj)
+    plt.title('Class Average per Subject Over Semester (Percentage)')
+    plt.xlabel('Exam')
+    plt.ylabel('Average Percentage')
+    plt.ylim(0, 100)
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Overall class timeline (average across subjects at each exam)
+    overall_class_timeline = []
+    for exam in time_order:
+        mean_pct = sum((subj_exam_avgs[subj][exam] / MAX_SCORES[exam]) * 100 for subj in subjects) / len(subjects)
+        overall_class_timeline.append(mean_pct)
+
+    plt.figure()
+    plt.plot(time_order, overall_class_timeline, marker='o', color='black')
+    plt.title('Class Overall Average Over Semester (Percentage)')
+    plt.xlabel('Exam')
+    plt.ylabel('Average Percentage')
+    plt.ylim(0, 100)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+# ----------------- Menu -----------------
 
 def main():
-    """Main menu"""
+    students = {}
     while True:
-        print("\n" + "="*50)
-        print("   STUDENT MARKS MANAGEMENT SYSTEM")
-        print("="*50)
+        print("\n--- VIT Student Marks Management ---")
         print("1. Add Student")
-        print("2. View Student")
+        print("2. View Individual Student Details")
         print("3. View All Students")
         print("4. Update Student Marks")
-        print("5. Delete Student")
-        print("6. Exit")
-        print("="*50)
-        
-        choice = input("Enter your choice (1-6): ")
-        
-        if choice == '1':
-            add_student()
-        elif choice == '2':
-            view_student()
-        elif choice == '3':
-            view_all_students()
-        elif choice == '4':
-            update_student()
-        elif choice == '5':
-            delete_student()
-        elif choice == '6':
-            print("Thank you for using the system!")
-            break
-        else:
-            print("Invalid choice! Please try again.")
+        print("5. Delete Student Record")
+        print("6. Class Performance")
+        print("7. Exit")
+        choice = input("Enter your choice (1-7): ")
 
-if __name__ == "__main__":
+        if choice == "1":
+            roll = input("Enter Roll Number: ").strip()
+            if roll in students:
+                print("Student already exists!")
+                continue
+            name = input("Enter Name: ").strip()
+            all_subjects_marks = {}
+            for subject in subjects_data:
+                print(f"\n-- Enter marks for: {subject} --")
+                marks = get_marks_input()
+                all_subjects_marks[subject] = marks
+            students[roll] = {'name': name, 'subjects': all_subjects_marks}
+            print("Student added successfully.")
+
+        elif choice == "2":
+            if not students:
+                print("No student records available.")
+            else:
+                view_individual_student(students)
+
+        elif choice == "3":
+            if not students:
+                print("No student records available.")
+            else:
+                print_students_table(students)
+
+        elif choice == "4":
+            roll = input("Enter Roll Number to update: ").strip()
+            if roll not in students:
+                print("Student not found!")
+                continue
+            print("Updating marks for student:", students[roll]['name'])
+            for subject in students[roll]['subjects']:
+                print(f"\n-- Enter new marks for: {subject} --")
+                students[roll]['subjects'][subject] = get_marks_input()
+            print("Marks updated successfully.")
+
+        elif choice == "5":
+            roll = input("Enter Roll Number to delete: ").strip()
+            if roll in students:
+                del students[roll]
+                print("Student record deleted.")
+            else:
+                print("Student not found!")
+
+        elif choice == "6":
+            class_performance(students)
+
+        elif choice == "7":
+            print("Exiting.")
+            sys.exit()
+
+        else:
+            print("Invalid choice. Try again.")
+
+if _name_ == "_main_":
     main()
